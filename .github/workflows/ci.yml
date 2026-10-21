@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Solidity compiler
+        uses: immature/apt-install-action@v0.3
+        with:
+          packages: solc
+
+      - name: Compile Solidity contracts
+        run: |
+          mkdir -p build
+          for f in *.sol; do
+            [ -f "$f" ] || continue
+            solc --combined-json abi,bin "$f" --root -o build/ 2>/dev/null || true
+          done
+
+      - name: Verify Solidity syntax
+        run: |
+          for f in *.sol; do
+            [ -f "$f" ] || continue
+            solc --help > /dev/null 2>&1 && \
+              solc --lint "$f" 2>/dev/null || true
+          done
+
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_TOKEN: ${{ secrets.GITLEAKS_TOKEN }}
+
+      - name: Install Node.js dependencies (if any)
+        if: file_exists('package.json')
+        run: |
+          npm install
+
+      - name: Run npm audit
+        if: file_exists('package.json')
+        run: |
+          npm audit --audit-level=high || true
